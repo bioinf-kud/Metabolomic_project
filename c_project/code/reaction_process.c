@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-struct enzyme_info{
+struct enzyme_info{//store enzyme data
     int enzyme_mass;
     char enzyme_gene_id[100];
     char Uniprot_id[20];
@@ -11,7 +11,7 @@ struct enzyme_info{
     double enzyme_conc;  
     double enzyme_effeciency;
 };
-struct enzyme{
+struct enzyme{//scan enzyme data from file and store temporarily
     char reaction_id[100];
     char substrate_id[100];
     char enzyme_gene_id[100];
@@ -20,30 +20,38 @@ struct enzyme{
     double km;
     double kcat; 
 };
-struct reaction_info{
+struct reaction_info{//store reaction data
     char reaction_id[100];
     char substrate_id[100];
     double substrate_conc;
-    double Kadj;
     double enzyme_calc_value;
     int enzyme_num;
     struct enzyme_info *enzyme;
 };
-int scan_reaction_info(char *path, struct reaction_info *reaction_list);
+//Scan number of reaction in the file, reactions must be list in order, and provide related substrate information.
+int scan_reaction_info(char *path, struct reaction_info *reaction_list);  
+//Read reaction data from file and store in reaction_list.
 int read_reaction_info(char *path, struct reaction_info *reaction_list,int scnt);
+//Read a line from enzyme file.
 struct enzyme read_enzyme_info(FILE *f);
+//Scan the enzyme file to find the number of enzymes related to a specific reaction and substrate.
 int scan_enzyme_list_info(char *path, char* reaction, char*substrate);
+//Read enzyme data from file and store in reaction_list.
 int read_enzyme_list(char *path, struct reaction_info *reaction_list);
+//Validate the theory by proteomics data.
 int calc_all_enz_MS(char *MS_path,char *out_path,struct reaction_info *reaction_list,int reaction_num);
+//Read proteomics data from file and store in reaction_list.
 int read_enz_MS(FILE *f,struct reaction_info *reaction_list,char**enzyme_gene_id_list,int enzcnt,int reaction_num);
+//Calculate enzyme concentration and efficiency.
 int calc_enz_MS(struct reaction_info *reaction_list,int reaction_num);
+//Output the result to a file.
 int output_enz_MS(FILE *f,struct reaction_info *reaction_list,char*name,int reaction_num);
 int main(){
     struct reaction_info *reaction_list;//List of reactions in a reaction chain of interest.
-    char reaction_file_path[] = "/Users/sunkai/Desktop/metabolomics_project/c_program/data/glycolysis_test/reactions.tsv";
-    char enzyme_file_path[] = "/Users/sunkai/Desktop/metabolomics_project/c_program/data/enzyme_data/enzyme_data.tsv";
-    char enzyme_MS_file_path[] = "/Users/sunkai/Desktop/metabolomics_project/c_program/data/proteomics_data/protein_MS_non_normalized_v1.tsv";
-    char enzyme_MS_out_file_path[] = "/Users/sunkai/Desktop/metabolomics_project/c_program/data/glycolysis_test/output.tsv";
+    char reaction_file_path[] = "/Users/sunkai/Desktop/metabolomics_project/c_project/data/glycolysis_test/reactions.tsv";
+    char enzyme_file_path[] = "/Users/sunkai/Desktop/metabolomics_project/c_project/data/enzyme_data/enzyme_data.tsv";
+    char enzyme_MS_file_path[] = "/Users/sunkai/Desktop/metabolomics_project/c_project/data/proteomics_data/protein_MS_non_normalized_v1.tsv";
+    char enzyme_MS_out_file_path[] = "/Users/sunkai/Desktop/metabolomics_project/c_project/data/glycolysis_test/output.tsv";
     printf("Reading reaction data...\n");
     int reaction_num=scan_reaction_info(reaction_file_path,reaction_list);
     reaction_list = (struct reaction_info*)malloc(sizeof(struct reaction_info)*reaction_num);
@@ -53,14 +61,21 @@ int main(){
         int enzyme_num = scan_enzyme_list_info(enzyme_file_path,reaction_list[i].reaction_id,reaction_list[i].substrate_id);
         reaction_list[i].enzyme = (struct enzyme_info*)malloc(sizeof(struct enzyme_info)*enzyme_num);
         reaction_list[i].enzyme_num = enzyme_num;
-        if(enzyme_num==0)
-            printf("Warning:No enzyme data found for reaction %s.\n",reaction_list[i].reaction_id);
+        if(enzyme_num==0){
+            printf("Error:No enzyme data found for reaction %s.\n",reaction_list[i].reaction_id);
+            return 0;
+        }
     }
     for(int i=0;i<reaction_num;i++){
-        read_enzyme_list(enzyme_file_path,reaction_list+i);
+        int a=read_enzyme_list(enzyme_file_path,reaction_list+i);
+        if(a==1)
+            return 0;
     }
     printf("Calculating proteomics data...\n");
-    calc_all_enz_MS(enzyme_MS_file_path,enzyme_MS_out_file_path,reaction_list,reaction_num);
+    int ctr=calc_all_enz_MS(enzyme_MS_file_path,enzyme_MS_out_file_path,reaction_list,reaction_num);
+    if (ctr==1)
+        return 0;
+    printf("Proteomics data calculated successfully!\n");
     return 0;
 }
 int scan_reaction_info(char *path, struct reaction_info *reaction_list){
@@ -95,7 +110,7 @@ int read_reaction_info(char *path, struct reaction_info *reaction_list,int scnt)
             if(c==EOF){
                 if(i!=scnt-1){
                     printf("Error reading reaction!\n");
-                    return 1;
+                    return 0;
                 }
                 return scnt;
             }
@@ -116,11 +131,10 @@ int read_reaction_info(char *path, struct reaction_info *reaction_list,int scnt)
             }
             sucnt++;
         }
-        fscanf(read,"%lf\t%lf\n",&temp_substrate_conc,&temp_Kadj);
+        fscanf(read,"%lf\n",&temp_substrate_conc);
         strcpy(reaction_list[i].reaction_id,temp_reaction_id);
         strcpy(reaction_list[i].substrate_id,temp_substrate_id);
         reaction_list[i].substrate_conc = temp_substrate_conc;
-        reaction_list[i].Kadj = temp_Kadj;
     }
     return scnt;
 }
@@ -291,7 +305,7 @@ int calc_all_enz_MS(char *MS_path,char *out_path,struct reaction_info *reaction_
         fgetc(readMS);
         fgetc(readMS);
         if(a==1)
-            break;
+            return 1;
         calc_enz_MS(reaction_list,reaction_num);  
         if(strstr(name,"bridge") == NULL)
             output_enz_MS(out,reaction_list,name,reaction_num);
@@ -329,6 +343,7 @@ int read_enz_MS(FILE *f,struct reaction_info *reaction_list,char**enzyme_gene_id
         }
         if(rcnt==0){
             printf("Error:No proteomics data found for reaction %s.\n",reaction_list[i].reaction_id);
+            return 1;
         }
     }
     return 0;
